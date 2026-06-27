@@ -10,11 +10,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>海ゴミ探究ノート</title>
 <link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png">
-<link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png">
-<link rel="apple-touch-icon" sizes="120x120" href="/icons/icon-120.png">
-<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
-<meta name="apple-mobile-web-app-title" content="海ゴミノート">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -825,6 +820,66 @@ select.pf-input optgroup{background:var(--navy3);color:var(--teal);font-size:11p
   <div class="install-txt"><strong>📲 ホーム画面に追加</strong> オフラインでも使えます</div>
   <button class="btn-install" id="installBtn">インストール</button>
   <button class="btn-install-cls" onclick="dismissInstall()">✕</button>
+</div>
+
+<!-- ホーム画面追加ガイド（iOS/Android共通） -->
+<div id="addGuideOverlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);align-items:flex-end;justify-content:center;">
+  <div style="background:#1a2f52;border-radius:20px 20px 0 0;padding:24px 20px 44px;width:100%;max-width:480px;text-align:center;">
+    <div style="font-size:22px;font-weight:700;color:#F0F8FF;margin-bottom:4px;">📱 ホーム画面に追加しよう</div>
+    <div style="font-size:13px;color:#8BA3BC;margin-bottom:18px;">アイコンからすぐ起動できます</div>
+
+    <!-- iPhone用 -->
+    <div id="guideIos">
+      <div style="background:#112240;border-radius:14px;padding:14px;margin-bottom:10px;text-align:left;display:flex;align-items:center;gap:14px;">
+        <div style="font-size:26px;">⬆️</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#0EA5A0;">① 画面下の共有ボタンをタップ</div>
+          <div style="font-size:12px;color:#8BA3BC;margin-top:2px;">□から矢印が出ているアイコン</div>
+        </div>
+      </div>
+      <div style="background:#112240;border-radius:14px;padding:14px;margin-bottom:10px;text-align:left;display:flex;align-items:center;gap:14px;">
+        <div style="font-size:26px;">➕</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#0EA5A0;">②「ホーム画面に追加」をタップ</div>
+          <div style="font-size:12px;color:#8BA3BC;margin-top:2px;">下にスクロールすると出てきます</div>
+        </div>
+      </div>
+      <div style="background:#112240;border-radius:14px;padding:14px;margin-bottom:18px;text-align:left;display:flex;align-items:center;gap:14px;">
+        <div style="font-size:26px;">✅</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#0EA5A0;">③ 右上の「追加」をタップ</div>
+          <div style="font-size:12px;color:#8BA3BC;margin-top:2px;">親方アイコンがホーム画面に登場！</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Android用 -->
+    <div id="guideAndroid">
+      <div style="background:#112240;border-radius:14px;padding:14px;margin-bottom:10px;text-align:left;display:flex;align-items:center;gap:14px;">
+        <div style="font-size:26px;">⋮</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#0EA5A0;">① 右上のメニュー（⋮）をタップ</div>
+          <div style="font-size:12px;color:#8BA3BC;margin-top:2px;">Chromeの右上にある点3つのアイコン</div>
+        </div>
+      </div>
+      <div style="background:#112240;border-radius:14px;padding:14px;margin-bottom:10px;text-align:left;display:flex;align-items:center;gap:14px;">
+        <div style="font-size:26px;">➕</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#0EA5A0;">②「ホーム画面に追加」をタップ</div>
+          <div style="font-size:12px;color:#8BA3BC;margin-top:2px;">または「アプリをインストール」</div>
+        </div>
+      </div>
+      <div style="background:#112240;border-radius:14px;padding:14px;margin-bottom:18px;text-align:left;display:flex;align-items:center;gap:14px;">
+        <div style="font-size:26px;">✅</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#0EA5A0;">③「追加」をタップ</div>
+          <div style="font-size:12px;color:#8BA3BC;margin-top:2px;">親方アイコンがホーム画面に登場！</div>
+        </div>
+      </div>
+    </div>
+
+    <button onclick="closeAddGuide()" style="width:100%;background:#0EA5A0;color:#0A1628;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">わかった！</button>
+  </div>
 </div>
 
 <script>
@@ -2955,6 +3010,30 @@ function dismissInstall(){
   document.getElementById('installBanner').classList.remove('on');
   deferredPrompt=null;
 }
+
+/* ホーム画面追加ガイド（iOS / Android共通） */
+function closeAddGuide(){
+  document.getElementById('addGuideOverlay').style.display='none';
+  localStorage.setItem('addGuideDone','1');
+}
+(function(){
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const isSafari = /safari/i.test(navigator.userAgent) && !/crios|fxios|opios|chrome/i.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  const done = localStorage.getItem('addGuideDone');
+  if(!isStandalone && !done && (isAndroid || (isIos && isSafari))){
+    setTimeout(()=>{
+      const el = document.getElementById('addGuideOverlay');
+      if(el){
+        // Android用とiOS用の説明を切り替え
+        document.getElementById('guideAndroid').style.display = isAndroid ? 'block' : 'none';
+        document.getElementById('guideIos').style.display = isIos ? 'block' : 'none';
+        el.style.display='flex';
+      }
+    }, 2000);
+  }
+})();
 
 /* ============================================================
    SERVICE WORKER
