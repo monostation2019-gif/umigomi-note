@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>管理者ページ — 海ゴミ探究ノート</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 :root{
@@ -237,9 +236,7 @@ header{
     <div class="login-logo">🌊</div>
     <div class="login-title">管理者ページ</div>
     <div class="login-sub">海ゴミ探究ノート — Admin</div>
-    <div class="lbl">メールアドレス</div>
-    <input id="loginEmail" class="linput" type="email" placeholder="admin@example.com" autocomplete="email">
-    <div class="lbl">パスワード</div>
+    <div class="lbl">管理者パスワード</div>
     <input id="loginPass" class="linput" type="password" placeholder="••••••••" autocomplete="current-password">
     <button class="login-btn" onclick="doLogin()">🔑 ログイン</button>
     <div class="login-err" id="loginErr"></div>
@@ -253,7 +250,7 @@ header{
       <div class="hdr-title">🛠️ 管理者ページ</div>
       <div class="hdr-sub" id="adminEmail">—</div>
     </div>
-    <button class="logout-btn" onclick="doLogout()">🚪 ログアウト</button>
+    <button class="logout-btn" onclick="doLogout()">🚪 ロック</button>
   </header>
 
   <div class="main">
@@ -299,49 +296,77 @@ const FIREBASE_CONFIG = {
   appId:             "1:693984572640:web:55b6be5cb8f453ca230c85"
 };
 
-// ★ あなたの管理者メールアドレス
-const ADMIN_EMAIL = "suppobg@yahoo.co.jp";
-
 // ============================================================
+// ★ パスワード認証（Firebase Auth不使用 — Firestoreのみ）
+// ============================================================
+// パスワードを変更したい場合：
+//   ブラウザのコンソールで以下を実行してハッシュを取得してください：
+//   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('新しいパスワード'));
+//   console.log([...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(''));
+// 取得したハッシュ文字列を ADMIN_PASS_HASH に貼り付けてください。
+// 現在のパスワード: umiadmin2025
+const ADMIN_PASS_HASH = 'f604b4c96d23319e76a29b1a3bc00b8f651603ec1ab25055c7c5ec4374e7d092';
+
 firebase.initializeApp(FIREBASE_CONFIG);
-const auth = firebase.auth();
-const db   = firebase.firestore();
+const db = firebase.firestore();
 
 let allFeedbacks = [];
 let currentFilter = 'all';
 
-// ===== 認証 =====
-auth.onAuthStateChanged(user => {
-  if (user && user.email === ADMIN_EMAIL) {
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('adminScreen').style.display = 'block';
-    document.getElementById('adminEmail').textContent = '🔑 ' + user.email;
-    loadFeedbacks();
-  } else if (user) {
-    auth.signOut();
-    showLoginErr('管理者権限がありません');
+// セッション管理（sessionStorageのみ — localStorageはUMIアプリと分離）
+function isLoggedIn() {
+  return sessionStorage.getItem('umi_admin_ok') === '1';
+}
+function setLoggedIn(v) {
+  if (v) sessionStorage.setItem('umi_admin_ok', '1');
+  else sessionStorage.removeItem('umi_admin_ok');
+}
+
+// 起動時チェック
+(function init() {
+  if (isLoggedIn()) {
+    showAdmin();
   } else {
     document.getElementById('loginScreen').style.display = 'flex';
     document.getElementById('adminScreen').style.display = 'none';
   }
-});
+})();
 
 async function doLogin() {
-  const email = document.getElementById('loginEmail').value.trim();
-  const pass  = document.getElementById('loginPass').value;
-  if (!email || !pass) { showLoginErr('メールとパスワードを入力してください'); return; }
+  const pass = document.getElementById('loginPass').value;
+  if (!pass) { showLoginErr('パスワードを入力してください'); return; }
   try {
-    await auth.signInWithEmailAndPassword(email, pass);
+    const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pass));
+    const hash = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
+    if (hash === ADMIN_PASS_HASH) {
+      setLoggedIn(true);
+      showAdmin();
+    } else {
+      showLoginErr('パスワードが違います');
+    }
   } catch(e) {
-    showLoginErr('ログインできませんでした：' + e.message);
+    showLoginErr('エラー: ' + e.message);
   }
 }
-function doLogout(){ auth.signOut(); }
-function showLoginErr(msg){
+
+function showAdmin() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('adminScreen').style.display = 'block';
+  loadFeedbacks();
+}
+
+function doLogout() {
+  setLoggedIn(false);
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('adminScreen').style.display = 'none';
+  document.getElementById('loginPass').value = '';
+}
+
+function showLoginErr(msg) {
   const el = document.getElementById('loginErr');
   el.textContent = msg; el.style.display = 'block';
 }
-document.addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 
 // ===== フィードバック読み込み =====
 async function loadFeedbacks() {
