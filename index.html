@@ -1586,19 +1586,7 @@ function startRealtimeSync() {
         merged.sort((a,b) => (b.ts||0)-(a.ts||0));
         recs = merged;
       } else {
-        // ローカルに楽観的更新中のrecのphoto/wx等をFirestoreデータへマージ
-        // （Firestoreはphotoを保存するが反映ラグがある間はローカルデータを優先）
-        const localById = {};
-        recs.forEach(r => { localById[r.id] = r; });
-        const merged = newRecs.map(r => {
-          const local = localById[r.id];
-          if (local && local.photo && !r.photo) {
-            // Firestoreにphotoがまだなければローカルのphotoをマージ
-            return { ...r, photo: local.photo };
-          }
-          return r;
-        });
-        recs = merged;
+        recs = newRecs;
         // ローカルキャッシュにも保存（オフライン対応）
         try { localStorage.setItem('umiV5', JSON.stringify(recs.slice(0,200))); } catch(e) {}
       }
@@ -2022,7 +2010,6 @@ function buildRankData(monthKey) {
     const recDate = parseDate(r.date);
     const recMk = recDate ? getMonthKey(recDate) : null;
     
-    // ユーザーマップ初期化（登録者・回収者ともに必要）
     if (!map[r.uid]) {
       map[r.uid] = {
         uid: r.uid, uname: r.uname || r.uid, uarea: r.uarea || '',
@@ -2032,17 +2019,17 @@ function buildRankData(monthKey) {
     }
     const u = map[r.uid];
 
-    // 登録ポイント（登録月が今月の場合のみ）
-    if (recMk === mk) {
-      const regPts = calcRecordPts(!!r.photo, !!r.lat);
-      u.totalPts += regPts;
-      if (u.typePts[r.type] !== undefined) u.typePts[r.type] += regPts;
-    }
+    if (!recMk || recMk !== mk) return; // 今月以外スキップ
 
-    // 回収ポイント（回収月が今月かチェック、登録月は問わない）
+    // 登録ポイント
+    const regPts = calcRecordPts(!!r.photo, !!r.lat);
+    u.totalPts += regPts;
+    if (u.typePts[r.type] !== undefined) u.typePts[r.type] += regPts;
+
+    // 回収ポイント
     if (r.collected && r.collectorId) {
-      const collDate = r.collectedAt ? parseDate(r.collectedAt) : recDate;
-      const collMk = collDate ? getMonthKey(collDate) : null;
+      const collDate = r.collectedAt ? parseDate(r.collectedAt) : null;
+      const collMk = collDate ? getMonthKey(collDate) : recMk;
       if (collMk === mk) {
         if (r.collectorId === r.uid) {
           // 自分で回収：+15pt ＋ ボーナス(写真あり+5/なし+2)
@@ -2738,19 +2725,17 @@ function openM(id){
   const wx=r.wx?`<div class="drow"><div class="dl">気象</div><div class="dv">${r.wx.icon} ${r.wx.temp}°C 風${r.wx.wind}m/s 湿${r.wx.hum}%</div></div>`:'';
   const collInfo = r.collected&&r.collectorName ? `<div class="drow"><div class="dl">回収者</div><div class="dv">👤 ${r.collectorName}（${r.collectorId||''}）</div></div>` : '';
   const collPhotoHTML = r.collectPhoto ? `<div class="drow"><div class="dl">回収写真</div><div class="dv"><img src="${r.collectPhoto}" style="width:100%;border-radius:8px;margin-top:4px;"></div></div>` : '';
-  // 回収ptをrフィールドから直接計算（ptHistoryは自分端末のデータのみのため、他デバイス・他ユーザー回収分が取れない問題を解消）
+  // ポイントをrフィールドから直接計算（calcMyPtsFromRecsと同じロジック）
+  // ptHistoryは自端末のデータのみなので他デバイス・他ユーザー回収分が取れない→使わない
   const regPts = calcRecordPts(!!r.photo, !!r.lat);
   let collPts = 0, collPtDetail = '';
-  if (r.collected) {
-    const isSelfCollect = r.collectorId === r.uid;
-    const baseCollPt = isSelfCollect ? PT.SELF_COLLECT : PT.OTHER_COLLECT;
+  if (r.collected && r.collectorId) {
+    const isSelf = r.collectorId === r.uid;
     const bonus = r.collectPhoto ? PT.COLLECT_PHOTO_BONUS : PT.COLLECT_NOPHOTO_BONUS;
-    collPts = baseCollPt + bonus;
-    const baseLabel = isSelfCollect ? `自己回収 +${baseCollPt}pt` : `他者回収 +${baseCollPt}pt`;
-    const bonusLabel = r.collectPhoto ? `写真ボーナス +${bonus}pt` : `写真なし +${bonus}pt`;
-    collPtDetail = `${baseLabel} ／ ${bonusLabel}`;
+    collPts = (isSelf ? PT.SELF_COLLECT : PT.OTHER_COLLECT) + bonus;
+    collPtDetail = `${isSelf ? '自己回収' : '他者回収'} +${isSelf ? PT.SELF_COLLECT : PT.OTHER_COLLECT}pt ／ ${r.collectPhoto ? '写真ボーナス' : '写真なし'} +${bonus}pt`;
   }
-  const displayRegPts = r.pts || regPts; // 保存済みptを優先、なければ計算値
+  const displayRegPts = r.pts || regPts;
   const totalPts = displayRegPts + collPts;
   document.getElementById('mDetails').innerHTML=`
     <div class="drow"><div class="dl">ステータス</div><div class="dv">${r.collected?'✅ 回収済':'⚠️ 未回収'}</div></div>
@@ -3111,15 +3096,9 @@ function renderMyLog(){
   }
 
   const rows = mine.map(r=>{
-    // ptHistoryに依存せずrフィールドから直接計算（別デバイス・再ログイン時も一致）
-    const regPts = r.pts || calcRecordPts(!!r.photo, !!r.lat);
-    let collectPt = 0;
-    if (r.collected) {
-      const isSelf = r.collectorId === r.uid;
-      const bonus = r.collectPhoto ? PT.COLLECT_PHOTO_BONUS : PT.COLLECT_NOPHOTO_BONUS;
-      collectPt = (isSelf ? PT.SELF_COLLECT : PT.OTHER_COLLECT) + bonus;
-    }
-    const displayPts = regPts + collectPt;
+    const linkedPts = ptHistory.filter(p=>p.recId===r.id).reduce((s,p)=>s+p.pts,0);
+    const displayPts = linkedPts > 0 ? linkedPts : (r.pts||0);
+    const collectPt = ptHistory.filter(p=>p.recId===r.id && p.reason.includes('回収')).reduce((s,p)=>s+p.pts,0);
     const ptLabel = collectPt > 0
       ? `<span style="color:var(--amber);font-size:10px">+${displayPts}pt</span> <span style="font-size:9px;color:var(--green)">(回収+${collectPt}pt含む)</span>`
       : `<span style="color:var(--amber);font-size:10px">+${displayPts}pt</span>`;
