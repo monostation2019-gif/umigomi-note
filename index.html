@@ -1878,11 +1878,8 @@ const DEFAULT_LOGO_SRC = document.getElementById('logoImg') ? document.getElemen
 function syncHeaderIcon() {
   const img = document.getElementById('logoImg');
   if (!img) return;
-  // アプリアイコン（changeAppIconで設定）が優先、なければアバター、なければデフォルト
-  const appIcon = (() => { try { return localStorage.getItem('umiIcon') || ''; } catch(e){ return ''; } })();
-  if (appIcon) {
-    img.src = appIcon;
-  } else if (myProfile.avatar) {
+  // myProfile.avatarを正とする（changeAppIconもavatarを更新するので一本化）
+  if (myProfile.avatar) {
     img.src = myProfile.avatar;
   } else {
     img.src = DEFAULT_LOGO_SRC;
@@ -3141,13 +3138,25 @@ function changeAppIcon(e){
   const f=e.target.files[0]; if(!f) return;
   const rd=new FileReader();
   rd.onload=ev=>{
-    document.getElementById('logoImg').src=ev.target.result;
-    try{ localStorage.setItem('umiIcon',ev.target.result); }catch(err){}
-    showToast('🖼️ アイコンを変更しました！');
+    compressImg(ev.target.result).then(compressed => {
+      // ヘッダーアイコンを即時更新
+      const logoImg = document.getElementById('logoImg');
+      if(logoImg) logoImg.src = compressed;
+      // プロフィールページのavatarImgも同期
+      const avatarImg = document.getElementById('avatarImg');
+      if(avatarImg) avatarImg.src = compressed;
+      // myProfileのavatarも更新してFirestoreへ保存（他デバイスにも反映）
+      myProfile.avatar = compressed;
+      _saveProfileLocal();
+      saveProfileToFirestore();
+      // localStorageのumiIconも更新（PWAアイコン用）
+      try{ localStorage.setItem('umiIcon', compressed); }catch(err){}
+      showToast('🖼️ アイコンを変更しました！');
+    });
   };
   rd.readAsDataURL(f); e.target.value='';
 }
-(function(){ try{ const s=localStorage.getItem('umiIcon'); if(s) document.getElementById('logoImg').src=s; }catch(e){} })();
+(function(){ try{ const s=localStorage.getItem('umiIcon'); if(s){ const img=document.getElementById('logoImg'); if(img) img.src=s; } }catch(e){} })();
 
 /* ============================================================
    TOAST
