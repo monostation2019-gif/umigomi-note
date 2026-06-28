@@ -1986,12 +1986,11 @@ async function loadMyReplies() {
   const list = document.getElementById('myRepliesList');
 
   try {
-    // orderByを使わずwhereのみ（複合インデックス不要）→ JS側でソート
     const snap = await db.collection('notifications')
       .where('toUid', '==', uid)
       .get();
 
-    // 管理者手動返信のみ抽出（isAutoReply:falseのもの）
+    // 管理者手動返信のみ抽出
     const docs = snap.docs.filter(doc => doc.data().isAutoReply !== true);
 
     if (!docs.length) {
@@ -2015,10 +2014,13 @@ async function loadMyReplies() {
         : '日時不明';
       const isNew = !d.read;
       return `
-        <div style="padding:10px;background:${isNew ? 'rgba(245,158,11,.08)' : 'rgba(0,0,0,.15)'};border-radius:10px;margin-bottom:8px;border:1px solid ${isNew ? 'rgba(245,158,11,.3)' : 'rgba(255,255,255,.05)'};">
+        <div id="notif-${doc.id}" style="padding:10px;background:${isNew ? 'rgba(245,158,11,.08)' : 'rgba(0,0,0,.15)'};border-radius:10px;margin-bottom:8px;border:1px solid ${isNew ? 'rgba(245,158,11,.3)' : 'rgba(255,255,255,.05)'};">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
-            <span style="font-size:10px;font-weight:700;color:var(--amber);">📬 ${escHtmlProfile(d.from || '管理者')}</span>
-            ${isNew ? '<span style="font-size:9px;background:rgba(245,158,11,.2);color:var(--amber);border-radius:10px;padding:2px 7px;">NEW</span>' : ''}
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-size:10px;font-weight:700;color:var(--amber);">📬 ${escHtmlProfile(d.from || '管理者')}</span>
+              ${isNew ? '<span style="font-size:9px;background:rgba(245,158,11,.2);color:var(--amber);border-radius:10px;padding:2px 7px;">NEW</span>' : ''}
+            </div>
+            <button onclick="deleteNotif('${doc.id}')" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#EF4444;border-radius:6px;padding:3px 9px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0;">🗑️ 削除</button>
           </div>
           <div style="font-size:12px;line-height:1.7;color:var(--white);white-space:pre-wrap;">${escHtmlProfile(d.message)}</div>
           <div style="font-size:9px;color:var(--gray);margin-top:5px;">${date}</div>
@@ -2035,6 +2037,23 @@ async function loadMyReplies() {
   } catch(e) {
     console.error('[loadMyReplies] error:', e.code, e.message);
     box.style.display = 'none';
+  }
+}
+
+async function deleteNotif(docId) {
+  try {
+    await db.collection('notifications').doc(docId).delete();
+    const el = document.getElementById('notif-' + docId);
+    if (el) el.remove();
+    // 残りがなければボックスを非表示
+    const box  = document.getElementById('myRepliesBox');
+    const list = document.getElementById('myRepliesList');
+    if (list && !list.querySelector('[id^="notif-"]')) {
+      box.style.display = 'none';
+    }
+  } catch(e) {
+    showToast('❌ 削除に失敗しました');
+    console.error('[deleteNotif] error:', e);
   }
 }
 
