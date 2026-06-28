@@ -716,6 +716,31 @@ select.pf-input optgroup{background:var(--navy3);color:var(--teal);font-size:11p
         <input class="pf-input" id="pfBio" type="text" placeholder="例: 海ゴミ探究者として活動中" maxlength="40">
       </div>
       <button class="btn-save-profile" onclick="saveProfile()">💾 保存する</button>
+
+      <!-- フィードバック送信 -->
+      <div style="background:var(--navy2);border-radius:12px;padding:14px;border:1px solid rgba(14,165,160,.2);">
+        <div style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:1px;margin-bottom:10px;">✉️ 管理者へのお問い合わせ</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <select id="fbType" class="pf-input" style="background:var(--navy3);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--white);padding:9px;">
+            <option value="request">💡 ご要望</option>
+            <option value="report">📋 報告</option>
+            <option value="message">💌 メッセージ</option>
+            <option value="other">💬 その他</option>
+          </select>
+          <textarea id="fbBody" class="memo" rows="4" placeholder="内容を入力してください..." style="font-size:14px;"></textarea>
+          <button onclick="submitFeedback()" style="background:linear-gradient(135deg,var(--teal) 0%,#0891B2 100%);color:var(--navy);border:none;border-radius:10px;padding:12px;font-family:'Oswald',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+            📨 管理者に送信する
+          </button>
+          <div id="fbResult" style="display:none;text-align:center;font-size:11px;padding:8px;border-radius:8px;"></div>
+        </div>
+      </div>
+
+      <!-- 管理者からの返信 -->
+      <div id="myRepliesBox" style="display:none;background:var(--navy2);border-radius:12px;padding:14px;border:1px solid rgba(245,158,11,.3);">
+        <div style="font-size:11px;font-weight:700;color:var(--amber);letter-spacing:1px;margin-bottom:10px;">📬 管理者からの返信</div>
+        <div id="myRepliesList"></div>
+      </div>
+
       <!-- ログアウト・アカウント情報 -->
       <div style="background:var(--navy2);border-radius:12px;padding:12px;border:1px solid rgba(255,255,255,.06);">
         <div style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:1px;margin-bottom:8px;">🔐 アカウント</div>
@@ -1846,6 +1871,114 @@ function loadProfile() {
     _applyProfileToUI();
   } catch(e) {}
 }
+/* ===== FEEDBACK SUBMIT ===== */
+async function submitFeedback() {
+  const type   = document.getElementById('fbType').value;
+  const body   = document.getElementById('fbBody').value.trim();
+  const result = document.getElementById('fbResult');
+
+  if (!body) {
+    result.textContent = '⚠️ 内容を入力してください';
+    result.style.display = 'block';
+    result.style.background = 'rgba(239,68,68,.15)';
+    result.style.color = '#EF4444';
+    return;
+  }
+
+  try {
+    result.textContent = '送信中...';
+    result.style.display = 'block';
+    result.style.background = 'rgba(14,165,160,.1)';
+    result.style.color = '#0EA5A0';
+
+    const uid      = auth.currentUser ? auth.currentUser.uid : 'anonymous';
+    const userName = myProfile && myProfile.name ? myProfile.name : '未設定';
+
+    // フィードバック保存
+    const docRef = await db.collection('feedbacks').add({
+      type:      type,
+      body:      body,
+      uid:       uid,
+      userName:  userName,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      read:      false,
+      replied:   false
+    });
+
+    // 自動返信メッセージをnotificationsコレクションに保存
+    await db.collection('notifications').add({
+      toUid:     uid,
+      toName:    userName,
+      fbId:      docRef.id,
+      message:   'お問い合わせありがとうございます！内容を確認し、必要に応じてご返信いたします。',
+      from:      '管理者',
+      isAutoReply: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      read:      false
+    });
+
+    result.textContent = '✅ 送信しました！管理者からの返信はプロフィールページでご確認いただけます。';
+    result.style.background = 'rgba(16,185,129,.15)';
+    result.style.color = '#10B981';
+    document.getElementById('fbBody').value = '';
+
+    // 返信欄を再読み込み
+    loadMyReplies();
+  } catch (e) {
+    result.textContent = '❌ 送信に失敗しました: ' + e.message;
+    result.style.background = 'rgba(239,68,68,.15)';
+    result.style.color = '#EF4444';
+    console.error(e);
+  }
+}
+
+/* ===== 自分への通知（返信）を読み込む ===== */
+async function loadMyReplies() {
+  const uid = auth.currentUser ? auth.currentUser.uid : null;
+  if (!uid) return;
+
+  try {
+    const snap = await db.collection('notifications')
+      .where('toUid', '==', uid)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    if (snap.empty) return;
+
+    const box  = document.getElementById('myRepliesBox');
+    const list = document.getElementById('myRepliesList');
+    box.style.display = 'block';
+
+    list.innerHTML = snap.docs.map(doc => {
+      const d = doc.data();
+      const date = d.createdAt
+        ? new Date(d.createdAt.seconds * 1000).toLocaleString('ja-JP', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })
+        : '';
+      const isNew = !d.read;
+      return `
+        <div style="padding:10px;background:${isNew ? 'rgba(245,158,11,.08)' : 'rgba(0,0,0,.15)'};border-radius:10px;margin-bottom:8px;border:1px solid ${isNew ? 'rgba(245,158,11,.3)' : 'rgba(255,255,255,.05)'};">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+            <span style="font-size:10px;font-weight:700;color:var(--amber);">📬 ${d.from || '管理者'}</span>
+            ${isNew ? '<span style="font-size:9px;background:rgba(245,158,11,.2);color:var(--amber);border-radius:10px;padding:2px 7px;">NEW</span>' : ''}
+          </div>
+          <div style="font-size:12px;line-height:1.7;color:var(--white);white-space:pre-wrap;">${escHtmlProfile(d.message)}</div>
+          <div style="font-size:9px;color:var(--gray);margin-top:5px;">${date}</div>
+        </div>`;
+    }).join('');
+
+    // 未読を既読に
+    snap.docs.forEach(doc => {
+      if (!doc.data().read) {
+        db.collection('notifications').doc(doc.id).update({ read: true }).catch(()=>{});
+      }
+    });
+  } catch(e) { console.log('replies load error', e); }
+}
+
+function escHtmlProfile(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 function saveProfile() {
   myProfile.name = document.getElementById('pfName').value.trim();
   myProfile.area = document.getElementById('pfArea').value.trim();
@@ -1899,6 +2032,7 @@ function updateMyStats() {
   document.getElementById('myPend').textContent  = mine.filter(r=>!r.collected).length;
   document.getElementById('myColl').textContent  = mine.filter(r=> r.collected).length;
   renderMyLog(); updatePtDisplay(); renderMySpecialtyChart();
+  loadMyReplies();
 }
 
 /* ============================================================
