@@ -1989,14 +1989,27 @@ function updatePtDisplay() {
   const rcvCount = thanksLog.filter(t => t.to === myID).length;
   document.getElementById('totalThanksRcv').textContent = rcvCount;
 
-  // 内訳
+  // 内訳（recsから直接計算 — ptHistoryは重複が残る場合があるため使わない）
   const breakdown = document.getElementById('ptBreakdown');
+  const typePtsMap = {};
+  GOMI_TYPES.forEach(t => { typePtsMap[t] = 0; });
+  recs.forEach(r => {
+    if (r.uid === myID && typePtsMap[r.type] !== undefined) {
+      typePtsMap[r.type] += calcRecordPts(!!r.photo, !!r.lat);
+      if (r.collected && r.collectorId === myID) {
+        const bonus = r.collectPhoto ? PT.COLLECT_PHOTO_BONUS : PT.COLLECT_NOPHOTO_BONUS;
+        typePtsMap[r.type] += PT.SELF_COLLECT + bonus;
+      }
+    } else if (r.collected && r.collectorId === myID && r.uid !== myID && typePtsMap[r.type] !== undefined) {
+      const bonus = r.collectPhoto ? PT.COLLECT_PHOTO_BONUS : PT.COLLECT_NOPHOTO_BONUS;
+      typePtsMap[r.type] += PT.OTHER_COLLECT + bonus;
+    }
+  });
   const typeItems = GOMI_TYPES.map(t => {
-    const p = getPtsByType(t);
+    const p = typePtsMap[t];
     if (p === 0) return '';
     return `<div class="pt-item">${EMAP[t]} ${t}: <span>${p}</span>pt</div>`;
   }).filter(Boolean);
-  const thanksRcvPts = thanksLog.filter(t => t.to === myID).length; // thanksはpt換算なし
   breakdown.innerHTML = typeItems.join('') || '<div class="pt-item" style="color:var(--gray)">記録を登録するとポイントが貯まります</div>';
 }
 
