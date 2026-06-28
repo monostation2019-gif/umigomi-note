@@ -1424,6 +1424,8 @@ auth.onAuthStateChanged(async user => {
       console.warn('Profile load failed:', e);
       loadProfile();
     }
+    // ptHistoryをFirestoreから復元（別デバイス・再ログイン時のポイント消失対策）
+    await loadPtHistoryFromFirestore();
     startRealtimeSync();
     updateStats(); updateMyStats();
     updateAuthStatus();
@@ -1676,6 +1678,26 @@ async function savePtToFirestore(entry) {
     await db.collection('users').doc(fbUser.uid)
       .collection('ptHistory').doc(entry.id || Date.now().toString()).set(entry);
   } catch(e) {}
+}
+
+// ログイン時にFirestoreからptHistoryを復元
+// 別デバイス/再ログイン時にlocalStorageが空でもポイントを取り戻す
+async function loadPtHistoryFromFirestore() {
+  if (!fbUser || fbUser.isAnonymous) return;
+  try {
+    const snap = await db.collection('users').doc(fbUser.uid)
+      .collection('ptHistory').orderBy('ts', 'asc').get();
+    if (snap.empty) return;
+    const remote = [];
+    snap.forEach(doc => remote.push({ id: doc.id, ...doc.data() }));
+    // localにある分とマージ（idで重複排除）
+    const localIds = new Set(ptHistory.map(p => p.id));
+    remote.forEach(p => { if (!localIds.has(p.id)) ptHistory.push(p); });
+    // localStorageにも保存してオフライン時も使えるように
+    try { localStorage.setItem('umiPtHistory_' + fbUser.uid, JSON.stringify(ptHistory)); } catch(e) {}
+  } catch(e) {
+    console.warn('loadPtHistoryFromFirestore failed:', e);
+  }
 }
 
 /* ============================================================
@@ -1935,10 +1957,7 @@ function buildRankData(monthKey) {
   const mk = monthKey || getMonthKey();
   const map = {};
 
-  // 自分のptHistoryから今月分 → 自分のデータに反映
-  const myMonthlyPts = getMonthlyPts(myID, mk);
-  
-  // recs から全ユーザーの行動を集計（シンプルに件数×ポイント）
+  // recs から全ユーザーの行動を集計（全員統一: recsベース）
   recs.forEach(r => {
     const recDate = parseDate(r.date);
     const recMk = recDate ? getMonthKey(recDate) : null;
@@ -1990,11 +2009,6 @@ function buildRankData(monthKey) {
       if (map[t.to]) map[t.to].thanks++;
     }
   });
-
-  // 自分のptHistoryで上書き（より正確な値）
-  if (map[myID]) {
-    map[myID].totalPts = myMonthlyPts;
-  }
 
   return Object.values(map);
 }
