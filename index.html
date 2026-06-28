@@ -1508,21 +1508,9 @@ function _applyProfileToUI() {
   // ヘッダーアイコン・ユーザー名も同期
   syncHeaderIcon();
   syncHeaderUser();
-  // ランキング上の自分のアバターも同期（data-rank-uid="" は自分以外、自分はdata属性なし → is-me クラスで特定）
-  _syncMyRankAvatar();
-}
-
-// ランキング上の「自分」アバターを最新の myProfile.avatar に同期
-function _syncMyRankAvatar() {
-  // trophy-av / rank-row-av のうち、is-me クラスを持つ行の中のアバター要素を更新
-  document.querySelectorAll('.trophy-row.is-me .trophy-av, .rank-row.is-me .rank-row-av').forEach(el => {
-    if (myProfile.avatar) {
-      el.innerHTML = `<img src="${myProfile.avatar}" style="width:100%;height:100%;object-fit:cover;">`;
-    } else {
-      const name = myProfile.name || '👤';
-      el.innerHTML = `<span style="font-size:${el.classList.contains('trophy-av')?'20':'18'}px;">${name.slice(0,1)}</span>`;
-    }
-  });
+  // 自分のキャッシュを最新化してランキングが表示中なら再描画
+  _updateMyCache();
+  if (document.getElementById('scr-rank')?.classList.contains('on')) renderRanking();
 }
 
 // localStorage バックアップ（UID別）
@@ -2732,44 +2720,49 @@ function goToMapCoord(lat,lng){
 }
 
 /* ============================================================
-   RANKING — ユーザープロフィールキャッシュ（アバター等）
+   RANKING — ユーザープロフィールキャッシュ（avatar / name / area / bio）
    ============================================================ */
-const _uprofCache = {};  // uid → { avatar, name, area, bio }
+const _uprofCache = {};       // uid → { avatar, name, area, bio } | null（取得失敗）
+const _uprofFetching = {};    // uid → Promise（重複リクエスト防止）
 
-async function _fetchAndCacheProf(uid) {
-  if (_uprofCache[uid] || !db) return;
-  _uprofCache[uid] = {};  // 重複リクエスト防止
-  try {
-    const doc = await db.collection('users').doc(uid).get();
-    if (doc.exists) {
-      _uprofCache[uid] = {
+// Firestoreから1ユーザー分を取得してキャッシュに保存
+function _fetchProf(uid) {
+  if (_uprofFetching[uid]) return _uprofFetching[uid];
+  if (_uprofCache[uid] !== undefined) return Promise.resolve();
+  if (!db) { _uprofCache[uid] = null; return Promise.resolve(); }
+
+  _uprofFetching[uid] = db.collection('users').doc(uid).get()
+    .then(doc => {
+      _uprofCache[uid] = doc.exists ? {
         avatar: doc.data().avatar || '',
         name:   doc.data().name   || '',
         area:   doc.data().area   || '',
         bio:    doc.data().bio    || ''
-      };
-    }
-  } catch(e) {}
+      } : null;
+    })
+    .catch(() => { _uprofCache[uid] = null; })
+    .finally(() => { delete _uprofFetching[uid]; });
+
+  return _uprofFetching[uid];
 }
 
-// ランキング描画後にアバター画像を非同期で差し替える
-async function _refreshRankAvatars(uids) {
-  for (const uid of uids) {
-    if (uid === myID) continue;
-    await _fetchAndCacheProf(uid);
-    const cached = _uprofCache[uid];
-    if (!cached || !cached.avatar) continue;
-    // trophy-av / rank-row-av の img を差し替え
-    document.querySelectorAll(`[data-rank-uid="${uid}"]`).forEach(el => {
-      el.innerHTML = `<img src="${cached.avatar}" style="width:100%;height:100%;object-fit:cover;">`;
-    });
-    // 名前・エリアも更新
-    document.querySelectorAll(`[data-rank-name="${uid}"]`).forEach(el => {
-      if (cached.name) el.querySelector('.rn-name').textContent = cached.name;
-      const areaEl = el.querySelector('.rn-area');
-      if (areaEl && cached.area) areaEl.textContent = '📍 ' + cached.area;
-    });
-  }
+// 自分のキャッシュを myProfile で常に最新に保つ
+function _updateMyCache() {
+  if (!myID) return;
+  _uprofCache[myID] = {
+    avatar: myProfile.avatar || '',
+    name:   myProfile.name   || '',
+    area:   myProfile.area   || '',
+    bio:    myProfile.bio    || ''
+  };
+}
+
+// 未キャッシュUIDを一括取得して再描画
+async function _prefetchRankProfiles(uids) {
+  const missing = uids.filter(uid => _uprofCache[uid] === undefined);
+  if (missing.length === 0) return;
+  await Promise.all(missing.map(uid => _fetchProf(uid)));
+  renderRanking();
 }
 
 function switchRank(mode){
@@ -2813,21 +2806,33 @@ function renderRanking(){
   };
   const TROPHY_CFG=[{cls:'t1',svgKey:'t1'},{cls:'t2',svgKey:'t2'},{cls:'t3',svgKey:'t3'}];
 
+  // 各ユーザーのプロフィールを取得するヘルパー
+  function getProf(u) {
+    const isMe = u.uid === myID;
+    if (isMe) return { avatar: myProfile.avatar||'', name: myProfile.name||u.uname||'', area: myProfile.area||u.uarea||'', bio: myProfile.bio||'' };
+    const c = _uprofCache[u.uid];
+    return c ? { avatar: c.avatar||'', name: c.name||u.uname||'', area: c.area||u.uarea||'', bio: c.bio||'' }
+             : { avatar: '', name: u.uname||'', area: u.uarea||'', bio: '' };
+  }
+  function avHTML(pf, size) {
+    if (pf.avatar) return `<img src="${pf.avatar}" style="width:100%;height:100%;object-fit:cover;">`;
+    const ini = (pf.name||'').slice(0,1) || '👤';
+    return `<span style="font-size:${size}px;">${ini}</span>`;
+  }
+
   const top3=users.slice(0,3);
   trophyEl.innerHTML=top3.map((u,i)=>{
     const cfg=TROPHY_CFG[i];
     const score=getScoreForMode(u,curRankMode);
     const isMe=u.uid===myID;
-    const cachedAv = isMe ? myProfile.avatar : (_uprofCache[u.uid]?.avatar || u.avatar || '');
-    const avHTML=cachedAv?`<img src="${cachedAv}" style="width:100%;height:100%;object-fit:cover;">`:`<span>👤</span>`;
-    const dispName = isMe ? (myProfile.name || u.uname) : (_uprofCache[u.uid]?.name || u.uname);
-    const dispArea = isMe ? (myProfile.area || u.uarea) : (_uprofCache[u.uid]?.area || u.uarea);
+    const pf=getProf(u);
     return `<div class="trophy-row ${cfg.cls}${isMe?' is-me':''}" onclick="openUprof('${u.uid}')" style="cursor:pointer;">
       <div class="trophy-icon">${TROPHY_SVG[cfg.svgKey]}</div>
-      <div class="trophy-av" data-rank-uid="${isMe?'':u.uid}">${avHTML}</div>
-      <div class="trophy-info" data-rank-name="${isMe?'':u.uid}">
-        <div class="trophy-name rn-name">${dispName}</div>
-        ${dispArea?`<div class="trophy-area rn-area">📍 ${dispArea}</div>`:'<div class="rn-area"></div>'}
+      <div class="trophy-av">${avHTML(pf,20)}</div>
+      <div class="trophy-info">
+        <div class="trophy-name">${pf.name}</div>
+        ${pf.area?`<div class="trophy-area">📍 ${pf.area}</div>`:''}
+        ${pf.bio?`<div style="font-size:9px;color:rgba(240,248,255,.6);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${pf.bio}</div>`:''}
       </div>
       <div class="trophy-score-col">
         <div class="trophy-score">${score}</div>
@@ -2841,21 +2846,18 @@ function renderRanking(){
   restTtl.style.display='flex';
   restList.innerHTML=rest.map((u,i)=>{
     const rank=i+4,score=getScoreForMode(u,curRankMode),isMe=u.uid===myID;
-    const cachedAv = isMe ? myProfile.avatar : (_uprofCache[u.uid]?.avatar || u.avatar || '');
-    const avHTML=cachedAv?`<img src="${cachedAv}" style="width:100%;height:100%;object-fit:cover;">`:`<span>👤</span>`;
-    const dispName = isMe ? (myProfile.name || u.uname) : (_uprofCache[u.uid]?.name || u.uname);
-    const dispArea = isMe ? (myProfile.area || u.uarea) : (_uprofCache[u.uid]?.area || u.uarea);
+    const pf=getProf(u);
     return `<div class="rank-row${isMe?' is-me':''}" onclick="openUprof('${u.uid}')" style="cursor:pointer;">
       <div class="rank-row-num">${rank}</div>
-      <div class="rank-row-av" data-rank-uid="${isMe?'':u.uid}">${avHTML}</div>
-      <div class="rank-row-name" data-rank-name="${isMe?'':u.uid}"><span class="rn-name">${dispName}</span>${dispArea?`<small class="rn-area">📍 ${dispArea}</small>`:'<small class="rn-area"></small>'}</div>
+      <div class="rank-row-av">${avHTML(pf,16)}</div>
+      <div class="rank-row-name">${pf.name}${pf.bio?`<small style="font-style:italic;">${pf.bio}</small>`:pf.area?`<small>📍 ${pf.area}</small>`:''}</div>
       <div class="rank-row-score">${score}<small>${modeLabel}</small></div>
     </div>`;
   }).join('');
 
-  // 他ユーザーのアバターを非同期で取得・更新
+  // 未キャッシュのユーザーがいれば非同期取得→再描画
   const allUids = users.slice(0,10).map(u=>u.uid).filter(uid=>uid!==myID);
-  _refreshRankAvatars(allUids);
+  _prefetchRankProfiles(allUids);
 }
 
 /* ============================================================
