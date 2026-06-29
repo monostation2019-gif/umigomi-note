@@ -112,21 +112,29 @@ header .sub { font-size: 9px; color: var(--text-dim); white-space: nowrap; }
 
 /* FILTER BAR */
 #filter-bar {
-  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-  z-index: 900; display: flex; gap: 5px; flex-wrap: wrap; justify-content: center;
-  padding: 0 12px;
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 900;
+  display: grid; grid-template-columns: repeat(2, auto);
+  gap: 4px; justify-content: center;
+  padding: 0 10px;
+  max-width: 260px;
+}
+/* 「すべて」ボタンは2列にまたがる */
+#filter-bar .filter-btn:first-child {
+  grid-column: 1 / -1;
 }
 .filter-btn {
   background: rgba(11,37,53,.88); border: 1px solid var(--border);
   color: var(--text-dim); border-radius: 20px;
   padding: 4px 10px; font-size: 11px; cursor: pointer;
   transition: all .15s; backdrop-filter: blur(6px); white-space: nowrap;
+  text-align: center;
 }
 .filter-btn.active { background: var(--teal); border-color: var(--seafoam); color: #fff; }
 
 /* VIEW TOGGLE */
 #view-toggle {
-  position: absolute; bottom: 80px; right: 12px;
+  position: absolute; bottom: 100px; right: 12px;
   z-index: 900; display: flex; flex-direction: column; gap: 5px;
 }
 .view-btn {
@@ -139,7 +147,7 @@ header .sub { font-size: 9px; color: var(--text-dim); white-space: nowrap; }
 
 /* FAB */
 #fab {
-  position: absolute; bottom: 20px; right: 12px;
+  position: absolute; bottom: 46px; right: 12px;
   z-index: 900; width: 52px; height: 52px;
   background: var(--coral); border: none; border-radius: 50%;
   color: #fff; font-size: 24px; cursor: pointer;
@@ -522,14 +530,11 @@ function isLoggedIn() {
     document.getElementById('loginScreen').style.display = 'none';
     const app = document.getElementById('mainApp');
     app.style.display = 'flex';
-    // ヘッダーを「閲覧モード」バナーに置き換える
+    // ヘッダーを非表示にして地図を全面表示（閲覧モード）
     const hdr = app.querySelector('header');
-    if (hdr) {
-      hdr.innerHTML = '<span style="font-size:15px">🗺️</span><div style="font-size:12px;font-weight:700;color:var(--seafoam);">ポイ捨てマップ 伊勢版</div><div style="margin-left:auto;font-size:10px;color:var(--text-dim);background:rgba(47,184,172,.12);border:1px solid var(--border);border-radius:5px;padding:3px 8px;">📖 閲覧モード</div>';
-    }
+    if (hdr) hdr.style.display = 'none';
     initMap();
-    fetchWeather();
-    // FAB非表示
+    // FAB非表示（閲覧のみ）
     setTimeout(() => {
       const fab = document.getElementById('fab');
       if (fab) fab.style.display = 'none';
