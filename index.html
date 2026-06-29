@@ -389,6 +389,7 @@ select.pf-input optgroup{background:var(--navy3);color:var(--teal);font-size:11p
   <button class="tab"    id="tab-rank" onclick="goTab('rank')"><span class="ti">🏆</span>ランキング</button>
   <button class="tab"    id="tab-hot"  onclick="goTab('hot')"><span class="ti">🔥</span>ホットスポット</button>
   <button class="tab"    id="tab-past" onclick="goTab('past')"><span class="ti">📊</span>過去データ</button>
+  <button class="tab"    id="tab-survey" onclick="goTab('survey')"><span class="ti">🗺️</span>調査報告</button>
   <button class="tab"    id="tab-prof" onclick="goTab('prof')"><span class="ti">👤</span>プロフィール</button>
 </div>
 
@@ -834,6 +835,22 @@ select.pf-input optgroup{background:var(--navy3);color:var(--teal);font-size:11p
       <button onclick="confirmCollNoPhoto()" style="flex:1;background:rgba(255,255,255,.09);color:var(--white);border:none;border-radius:10px;padding:13px;font-family:'Noto Sans JP',sans-serif;font-size:13px;font-weight:700;cursor:pointer;" id="collSkipBtn">写真なしで完了（自分+15pt+2pt ／ 他人+10pt+2pt）</button>
     </div>
   </div>
+</div>
+
+
+<!-- ===== 調査報告（ポイ捨てマップ 伊勢版） ===== -->
+<div class="scr" id="scr-survey" style="flex-direction:column;">
+  <div style="background:var(--navy2);border-bottom:1px solid rgba(14,165,160,.2);padding:10px 14px;flex-shrink:0;">
+    <div style="font-size:13px;font-weight:700;color:var(--teal);letter-spacing:1px;">🗺️ ポイ捨てマップ 伊勢版</div>
+    <div style="font-size:10px;color:var(--gray);margin-top:2px;">管理者専用 — ポイ捨てホットスポット調査報告</div>
+  </div>
+  <iframe
+    id="poisute-iframe"
+    src="poisute-map-ise.html"
+    style="flex:1;border:none;width:100%;min-height:0;"
+    allow="geolocation"
+    title="ポイ捨てマップ 伊勢版"
+  ></iframe>
 </div>
 
 <!-- ===== 認証モーダル ===== -->
