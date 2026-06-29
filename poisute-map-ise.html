@@ -157,6 +157,33 @@ header .sub { font-size: 9px; color: var(--text-dim); white-space: nowrap; }
 }
 #fab:hover { transform: scale(1.08); }
 
+/* GPS LOCATE BUTTON */
+#btn-locate {
+  position: absolute; bottom: 46px; left: 12px;
+  z-index: 900; width: 44px; height: 44px;
+  background: rgba(11,37,53,.92); border: 1px solid var(--border); border-radius: 50%;
+  color: var(--seafoam); font-size: 20px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(6px); box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  transition: background .15s;
+}
+#btn-locate:hover { background: var(--teal); color: #fff; }
+
+/* TILE SELECTOR */
+#tile-selector {
+  position: absolute; bottom: 46px; left: 64px;
+  z-index: 900;
+  background: rgba(11,37,53,.92); border: 1px solid var(--border); border-radius: 20px;
+  backdrop-filter: blur(6px); display: flex; align-items: center; gap: 0;
+  overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+.tile-btn {
+  padding: 6px 10px; font-size: 10px; font-weight: 700; cursor: pointer;
+  background: none; border: none; color: var(--text-dim); white-space: nowrap;
+  transition: all .15s;
+}
+.tile-btn.active { background: var(--teal); color: #fff; }
+
 /* STATS BAR */
 #stats-bar {
   position: absolute; bottom: 0; left: 0; right: 0;
@@ -405,6 +432,13 @@ textarea { resize: vertical; min-height: 60px; }
       <button class="view-btn" id="btn-both" onclick="setView('both')">🔀<br><span style="font-size:9px">両方</span></button>
     </div>
 
+    <button id="btn-locate" onclick="locateMe()" title="現在地へ移動">📍</button>
+    <div id="tile-selector">
+      <button class="tile-btn" id="tile-std" onclick="changeTile('std',this)">標準</button>
+      <button class="tile-btn active" id="tile-dark" onclick="changeTile('dark',this)">ダーク</button>
+      <button class="tile-btn" id="tile-pale" onclick="changeTile('pale',this)">淡色</button>
+      <button class="tile-btn" id="tile-sat" onclick="changeTile('sat',this)">衛星</button>
+    </div>
     <button id="fab" onclick="openForm()" title="ポイ捨てを記録">＋</button>
 
     <div id="stats-bar">
@@ -593,6 +627,8 @@ let clusterGroup = null;
 let heatLayer = null;
 let currentView = 'heat';
 let currentFilter = 'all';
+let currentTileLayer = null;
+let locateMarker = null;
 let selectedPhotos = [];
 let selectedTrash = [];
 let selectedSeverity = 1;
@@ -600,7 +636,7 @@ let selectedCount = 1;
 
 function initMap() {
   mapObj = L.map('map', { zoomControl: true }).setView([34.489, 136.706], 13);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  currentTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '© OpenStreetMap contributors © CARTO',
     subdomains: 'abcd', maxZoom: 19
   }).addTo(mapObj);
@@ -611,7 +647,9 @@ function initMap() {
   mapObj.on('click', function(e) {
     document.getElementById('inp-lat').value = e.latlng.lat.toFixed(6);
     document.getElementById('inp-lng').value = e.latlng.lng.toFixed(6);
-    document.getElementById('gps-status').textContent = `📍 地図からピック: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+    document.getElementById('gps-status').textContent = `📍 地図タップ: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+    // タップしたら自動でフォームを開く
+    openForm();
   });
 
   updateCountUI();
@@ -743,6 +781,47 @@ function openForm() {
 }
 function closeForm() { document.getElementById('form-overlay').classList.remove('open'); }
 function closeFormOnBg(e) { if (e.target === document.getElementById('form-overlay')) closeForm(); }
+
+// ===== TILE =====
+const TILES = {
+  std:  { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr: '© OpenStreetMap contributors', sub: 'abc' },
+  dark: { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr: '© OpenStreetMap © CARTO', sub: 'abcd' },
+  pale: { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', attr: '© OpenStreetMap © CARTO', sub: 'abcd' },
+  sat:  { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr: '© Esri', sub: '' }
+};
+function changeTile(key, btn) {
+  if (!mapObj || !TILES[key]) return;
+  if (currentTileLayer) mapObj.removeLayer(currentTileLayer);
+  const t = TILES[key];
+  const opts = { attribution: t.attr, maxZoom: 19 };
+  if (t.sub) opts.subdomains = t.sub;
+  currentTileLayer = L.tileLayer(t.url, opts).addTo(mapObj);
+  document.querySelectorAll('.tile-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ===== LOCATE ME =====
+function locateMe() {
+  const btn = document.getElementById('btn-locate');
+  if (!navigator.geolocation) { showToast('⚠️ 位置情報が使えません'); return; }
+  btn.textContent = '⏳';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const lat = pos.coords.latitude, lng = pos.coords.longitude;
+      mapObj.setView([lat, lng], 16);
+      if (locateMarker) mapObj.removeLayer(locateMarker);
+      locateMarker = L.circleMarker([lat, lng], {
+        radius: 9, color: '#2fb8ac', fillColor: '#2fb8ac', fillOpacity: 0.9, weight: 2
+      }).addTo(mapObj).bindPopup('📍 現在地').openPopup();
+      btn.textContent = '📍';
+    },
+    err => {
+      showToast('⚠️ 位置情報取得に失敗しました');
+      btn.textContent = '📍';
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
 
 // ===== GPS =====
 function getGPS() {
