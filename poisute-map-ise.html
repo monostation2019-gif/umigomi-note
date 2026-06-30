@@ -94,12 +94,15 @@ header .sub { font-size: 9px; color: var(--text-dim); white-space: nowrap; }
 .btn-icon.lock { border-color: rgba(224,92,58,.4); color: var(--coral); padding: 4px 8px; }
 .btn-icon.lock:hover { background: rgba(224,92,58,.2); }
 
-/* WEATHER BADGE */
+/* WEATHER BADGE (タイル選択と同じ段、左側に配置) */
 #weather-badge {
+  position: absolute; top: 8px; left: 12px;
+  z-index: 900;
   display: flex; align-items: center; gap: 4px;
-  background: rgba(47,184,172,.12); border: 1px solid var(--border);
-  border-radius: 6px; padding: 3px 6px; flex-shrink: 0; cursor: default;
-  max-width: 120px; overflow: hidden;
+  background: rgba(11,37,53,.92); border: 1px solid var(--border);
+  border-radius: 20px; padding: 6px 10px; flex-shrink: 0; cursor: default;
+  max-width: 130px; overflow: hidden;
+  backdrop-filter: blur(6px); box-shadow: 0 2px 8px rgba(0,0,0,.4);
 }
 .wx-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
 .wx-info { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
@@ -157,6 +160,33 @@ header .sub { font-size: 9px; color: var(--text-dim); white-space: nowrap; }
   transition: transform .15s;
 }
 #fab:hover { transform: scale(1.08); }
+
+/* PIN PLACEMENT MODE (あとからピンを打つ機能) */
+#btn-pin-mode {
+  position: absolute; bottom: calc(46px + env(safe-area-inset-bottom)); right: 76px;
+  z-index: 900; width: 52px; height: 52px;
+  background: var(--surface-2); border: 2px solid var(--seafoam); border-radius: 50%;
+  color: var(--seafoam); font-size: 22px; cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+#btn-pin-mode.active {
+  background: var(--seafoam); color: #fff; border-color: #fff;
+  box-shadow: 0 0 0 4px rgba(47,184,172,.35), 0 4px 16px rgba(47,184,172,.6);
+}
+#btn-pin-mode:hover { transform: scale(1.08); }
+
+/* ピン配置モード中の地図カーソルとバナー */
+#map-wrap.pin-mode-on #map { cursor: crosshair; }
+#pin-mode-banner {
+  position: absolute; top: 96px; left: 50%; transform: translateX(-50%);
+  z-index: 950; background: var(--seafoam); color: #fff;
+  font-size: 12px; font-weight: 700; padding: 7px 16px; border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4); display: none;
+  white-space: nowrap;
+}
+#pin-mode-banner.show { display: block; }
 
 /* TILE SELECTOR (地図スタイル切り替え) */
 #tile-selector {
@@ -372,6 +402,17 @@ textarea { resize: vertical; min-height: 60px; }
 .leaflet-control-zoom a { background: var(--surface) !important; color: var(--text) !important; border-color: var(--border) !important; }
 .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large { background: rgba(26,122,138,.45) !important; }
 .marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div { background: var(--teal) !important; color: #fff !important; font-weight: 700; }
+/* Leaflet帰属表示(右下"Leaflet"バー)がstats-barと重ならないよう、stats-barの上に押し上げる */
+.leaflet-control-attribution {
+  background: rgba(11,37,53,.85) !important;
+  color: var(--text-dim) !important;
+  font-size: 9px !important;
+  margin-bottom: 0 !important;
+}
+.leaflet-control-attribution a { color: var(--seafoam) !important; }
+.leaflet-bottom.leaflet-right {
+  margin-bottom: calc(36px + env(safe-area-inset-bottom)) !important;
+}
 
 @media (min-width: 640px) {
   .overlay { align-items: center; }
@@ -400,13 +441,6 @@ textarea { resize: vertical; min-height: 60px; }
       <span class="sub">伊勢版 管理者専用</span>
     </div>
     <div class="header-actions">
-      <div id="weather-badge" title="気象情報">
-        <span class="wx-icon" id="wx-icon">⏳</span>
-        <div class="wx-info">
-          <span class="wx-main" id="wx-main">取得中…</span>
-          <span class="wx-sub"  id="wx-sub"></span>
-        </div>
-      </div>
       <button class="btn-icon" onclick="openListModal()">📋 一覧</button>
       <button class="btn-icon" onclick="exportData()">📥 CSV</button>
       <button class="btn-icon lock" onclick="doLogout()">🔒</button>
@@ -417,6 +451,14 @@ textarea { resize: vertical; min-height: 60px; }
     <div id="map"></div>
 
     <button id="btn-admin-back" onclick="goToAdmin()">⚙️ 管理画面へ</button>
+
+    <div id="weather-badge" title="気象情報">
+      <span class="wx-icon" id="wx-icon">⏳</span>
+      <div class="wx-info">
+        <span class="wx-main" id="wx-main">取得中…</span>
+        <span class="wx-sub"  id="wx-sub"></span>
+      </div>
+    </div>
 
     <div id="tile-selector">
       <button class="tile-btn" id="tile-std" onclick="changeTile('std',this)">標準</button>
@@ -441,7 +483,9 @@ textarea { resize: vertical; min-height: 60px; }
       <button class="view-btn" id="btn-both" onclick="setView('both')">🔀<br><span style="font-size:9px">両方</span></button>
     </div>
 
+    <button id="btn-pin-mode" onclick="togglePinMode()" title="あとから場所を選んでピンを打つ">📌</button>
     <button id="fab" onclick="openForm()" title="ポイ捨てを記録">＋</button>
+    <div id="pin-mode-banner">📌 地図をタップして場所を選んでください</div>
 
     <div id="stats-bar">
       <div class="stat-item">📍 <strong id="stat-total">0</strong> 件</div>
@@ -576,6 +620,9 @@ function isLoggedIn() {
       if (fab) fab.style.display = 'none';
       const backBtn = document.getElementById('btn-admin-back');
       if (backBtn) backBtn.classList.add('show');
+      // 閲覧モードでは管理画面ボタンが左端にあるため、天気バッジをその右に寄せる
+      const wxBadge = document.getElementById('weather-badge');
+      if (wxBadge) wxBadge.style.left = '110px';
     }, 100);
     return;
   }
@@ -628,6 +675,8 @@ let records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
 // ===== MAP =====
 let mapObj = null;
 let currentTileLayer = null;
+let pinModeOn = false;
+let tempPinMarker = null;
 let clusterGroup = null;
 let heatLayer = null;
 let currentView = 'heat';
@@ -665,6 +714,22 @@ function initMap() {
     document.getElementById('inp-lat').value = e.latlng.lat.toFixed(6);
     document.getElementById('inp-lng').value = e.latlng.lng.toFixed(6);
     document.getElementById('gps-status').textContent = `📍 地図からピック: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+
+    if (pinModeOn) {
+      // 仮ピンを表示
+      if (tempPinMarker) mapObj.removeLayer(tempPinMarker);
+      tempPinMarker = L.marker(e.latlng, {
+        icon: L.divIcon({
+          className: 'temp-pin-icon',
+          html: '📍',
+          iconSize: [28, 28],
+          iconAnchor: [14, 28]
+        })
+      }).addTo(mapObj);
+      // フォームを自動オープン（タップ位置をそのまま登録対象にする）
+      openForm(e.latlng);
+      togglePinMode(false); // モードは1回使ったら自動終了
+    }
   });
 
   updateCountUI();
@@ -715,6 +780,24 @@ function goToAdmin() {
   const url = new URL(location.href);
   url.searchParams.delete('view');
   location.href = url.toString();
+}
+
+// ===== PIN PLACEMENT MODE (あとから場所を選んでピンを打つ) =====
+function togglePinMode(forceState) {
+  pinModeOn = (typeof forceState === 'boolean') ? forceState : !pinModeOn;
+  const btn = document.getElementById('btn-pin-mode');
+  const banner = document.getElementById('pin-mode-banner');
+  const wrap = document.getElementById('map-wrap');
+  if (pinModeOn) {
+    btn.classList.add('active');
+    banner.classList.add('show');
+    wrap.classList.add('pin-mode-on');
+    showToast('📌 地図上の場所をタップしてください');
+  } else {
+    btn.classList.remove('active');
+    banner.classList.remove('show');
+    wrap.classList.remove('pin-mode-on');
+  }
 }
 
 // ===== VIEW =====
@@ -828,19 +911,28 @@ function deleteRecord(id) {
 }
 
 // ===== FORM =====
-function openForm() {
+function openForm(presetLatLng) {
   document.getElementById('form-overlay').classList.add('open');
-  document.getElementById('inp-lat').value = '';
-  document.getElementById('inp-lng').value = '';
+  if (presetLatLng) {
+    document.getElementById('inp-lat').value = presetLatLng.lat.toFixed(6);
+    document.getElementById('inp-lng').value = presetLatLng.lng.toFixed(6);
+    document.getElementById('gps-status').textContent = `📍 選択した場所: ${presetLatLng.lat.toFixed(5)}, ${presetLatLng.lng.toFixed(5)}`;
+  } else {
+    document.getElementById('inp-lat').value = '';
+    document.getElementById('inp-lng').value = '';
+    document.getElementById('gps-status').textContent = '地図をタップして場所を選ぶか「現在地」ボタンで取得';
+  }
   document.getElementById('inp-memo').value = '';
-  document.getElementById('gps-status').textContent = '地図をタップして場所を選ぶか「現在地」ボタンで取得';
   document.getElementById('photo-preview').innerHTML = '';
   selectedPhotos = []; selectedTrash = []; selectedSeverity = 1; selectedCount = 1;
   document.querySelectorAll('.trash-chip').forEach(c => c.classList.remove('selected'));
   document.getElementById('inp-count').value = 1;
   updateCountUI();
 }
-function closeForm() { document.getElementById('form-overlay').classList.remove('open'); }
+function closeForm() {
+  document.getElementById('form-overlay').classList.remove('open');
+  if (tempPinMarker && mapObj) { mapObj.removeLayer(tempPinMarker); tempPinMarker = null; }
+}
 function closeFormOnBg(e) { if (e.target === document.getElementById('form-overlay')) closeForm(); }
 
 // ===== GPS =====
