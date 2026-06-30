@@ -68,7 +68,7 @@ html, body { height: 100%; height: 100dvh; overflow: hidden; font-family: var(--
 .login-err { display: none; margin-top: 10px; font-size: 12px; color: var(--coral); text-align: center; background: rgba(224,92,58,.1); border-radius: 8px; padding: 8px; }
 
 /* MAIN APP */
-#mainApp { display: none; flex-direction: column; height: 100vh; height: 100dvh; }
+#mainApp { display: none; flex-direction: column; height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
 
 header {
   background: var(--ocean-mid);
@@ -112,12 +112,13 @@ header .sub { font-size: 9px; color: var(--text-dim); white-space: nowrap; }
 
 /* FILTER BAR */
 #filter-bar {
-  position: absolute; top: 8px; left: 0; right: 0;
+  position: absolute; top: 52px; left: 0; right: 0;
   z-index: 900;
   display: flex; flex-wrap: nowrap;
   gap: 6px;
   padding: 0 10px;
-  overflow-x: auto;
+  padding-right: 90px;
+  overflow-x: scroll;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
@@ -156,6 +157,32 @@ header .sub { font-size: 9px; color: var(--text-dim); white-space: nowrap; }
   transition: transform .15s;
 }
 #fab:hover { transform: scale(1.08); }
+
+/* TILE SELECTOR (地図スタイル切り替え) */
+#tile-selector {
+  position: absolute; top: 8px; right: 12px;
+  z-index: 900;
+  background: rgba(11,37,53,.92); border: 1px solid var(--border); border-radius: 20px;
+  backdrop-filter: blur(6px); display: flex; align-items: center;
+  overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+.tile-btn {
+  padding: 6px 10px; font-size: 10px; font-weight: 700; cursor: pointer;
+  background: none; border: none; color: var(--text-dim); white-space: nowrap;
+  transition: all .15s;
+}
+.tile-btn.active { background: var(--teal); color: #fff; }
+
+/* ADMIN BACK BUTTON (閲覧モードから管理画面へ) */
+#btn-admin-back {
+  position: absolute; top: 8px; left: 12px;
+  z-index: 901;
+  background: rgba(11,37,53,.92); border: 1px solid var(--border); border-radius: 20px;
+  color: var(--seafoam); font-size: 12px; font-weight: 700; cursor: pointer;
+  padding: 7px 12px; display: none; align-items: center; gap: 4px;
+  backdrop-filter: blur(6px); box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+#btn-admin-back.show { display: flex; }
 
 /* STATS BAR */
 #stats-bar {
@@ -389,6 +416,15 @@ textarea { resize: vertical; min-height: 60px; }
   <div id="map-wrap">
     <div id="map"></div>
 
+    <button id="btn-admin-back" onclick="goToAdmin()">⚙️ 管理画面へ</button>
+
+    <div id="tile-selector">
+      <button class="tile-btn" id="tile-std" onclick="changeTile('std',this)">標準</button>
+      <button class="tile-btn active" id="tile-dark" onclick="changeTile('dark',this)">ダーク</button>
+      <button class="tile-btn" id="tile-pale" onclick="changeTile('pale',this)">淡色</button>
+      <button class="tile-btn" id="tile-sat" onclick="changeTile('sat',this)">衛星</button>
+    </div>
+
     <div id="filter-bar">
       <button class="filter-btn active" data-type="all" onclick="setFilter('all',this)">すべて</button>
       <button class="filter-btn" data-type="ペットボトル" onclick="setFilter('ペットボトル',this)">🍶 PET</button>
@@ -534,10 +570,12 @@ function isLoggedIn() {
     const hdr = app.querySelector('header');
     if (hdr) hdr.style.display = 'none';
     initMap();
-    // FAB非表示（閲覧のみ）
+    // FAB非表示（閲覧のみ）、管理画面ボタンを表示
     setTimeout(() => {
       const fab = document.getElementById('fab');
       if (fab) fab.style.display = 'none';
+      const backBtn = document.getElementById('btn-admin-back');
+      if (backBtn) backBtn.classList.add('show');
     }, 100);
     return;
   }
@@ -589,6 +627,7 @@ let records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
 
 // ===== MAP =====
 let mapObj = null;
+let currentTileLayer = null;
 let clusterGroup = null;
 let heatLayer = null;
 let currentView = 'heat';
@@ -599,11 +638,25 @@ let selectedSeverity = 1;
 let selectedCount = 1;
 
 function initMap() {
+  // 二重初期化を防ぐ（bfcache復帰やinit()の重複呼び出し対策）
+  if (mapObj) {
+    mapObj.invalidateSize();
+    return;
+  }
+
   mapObj = L.map('map', { zoomControl: true }).setView([34.489, 136.706], 13);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  currentTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '© OpenStreetMap contributors © CARTO',
     subdomains: 'abcd', maxZoom: 19
-  }).addTo(mapObj);
+  });
+  currentTileLayer.on('tileerror', () => {
+    // CDN障害時は標準OSMタイルにフォールバック
+    if (!currentTileLayer._fallbackApplied) {
+      currentTileLayer._fallbackApplied = true;
+      currentTileLayer.setUrl('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+    }
+  });
+  currentTileLayer.addTo(mapObj);
 
   clusterGroup = L.markerClusterGroup({ maxClusterRadius: 60 });
   heatLayer = L.heatLayer([], { radius: 30, blur: 22, maxZoom: 17 });
@@ -622,10 +675,46 @@ function initMap() {
   requestAnimationFrame(() => { if (mapObj) mapObj.invalidateSize(); });
   setTimeout(() => { if (mapObj) mapObj.invalidateSize(); }, 100);
   setTimeout(() => { if (mapObj) mapObj.invalidateSize(); }, 400);
+  setTimeout(() => { if (mapObj) mapObj.invalidateSize(); }, 1000);
   window.addEventListener('resize', () => { if (mapObj) mapObj.invalidateSize(); });
   window.addEventListener('orientationchange', () => {
     setTimeout(() => { if (mapObj) mapObj.invalidateSize(); }, 200);
   });
+  // iOS Safariのタブ復帰（bfcache）時に地図が固まって見える対策
+  window.addEventListener('pageshow', () => {
+    setTimeout(() => { if (mapObj) mapObj.invalidateSize(); }, 100);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && mapObj) {
+      setTimeout(() => mapObj.invalidateSize(), 100);
+    }
+  });
+}
+
+// ===== TILE (地図スタイル切り替え) =====
+const TILES = {
+  std:  { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr: '© OpenStreetMap contributors', sub: 'abc' },
+  dark: { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr: '© OpenStreetMap © CARTO', sub: 'abcd' },
+  pale: { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', attr: '© OpenStreetMap © CARTO', sub: 'abcd' },
+  sat:  { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr: '© Esri', sub: '' }
+};
+function changeTile(key, btn) {
+  if (!mapObj || !TILES[key]) return;
+  if (currentTileLayer) mapObj.removeLayer(currentTileLayer);
+  const t = TILES[key];
+  const opts = { attribution: t.attr, maxZoom: 19 };
+  if (t.sub) opts.subdomains = t.sub;
+  currentTileLayer = L.tileLayer(t.url, opts).addTo(mapObj);
+  document.querySelectorAll('.tile-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+// ===== ADMIN NAVIGATION (閲覧モードから管理画面へ) =====
+function goToAdmin() {
+  // 同じファイルのview=mapパラメータを外して通常の管理画面として開く
+  const url = new URL(location.href);
+  url.searchParams.delete('view');
+  location.href = url.toString();
 }
 
 // ===== VIEW =====
@@ -924,7 +1013,15 @@ const WX_CODE = {
   45:['🌫️','霧'],61:['🌧️','小雨'],63:['🌧️','雨'],65:['🌧️','大雨'],
   80:['🌦️','にわか雨'],95:['⛈️','雷雨']
 };
-async function fetchWeather() {
+// fetchにタイムアウトを設定するヘルパー
+function fetchWithTimeout(url, ms = 6000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+async function fetchWeather(retryCount = 0) {
+  const MAX_RETRY = 2;
   if (!navigator.geolocation) {
     document.getElementById('wx-main').textContent = '—';
     return;
@@ -933,14 +1030,22 @@ async function fetchWeather() {
     try {
       const { latitude: lat, longitude: lon } = pos.coords;
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weathercode,windspeed_10m&timezone=Asia%2FTokyo`;
-      const d = await (await fetch(url)).json();
+      const res = await fetchWithTimeout(url, 6000);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
       const c = d.current;
       const [icon, label] = WX_CODE[c.weathercode] || ['🌡️','不明'];
       document.getElementById('wx-icon').textContent = icon;
       document.getElementById('wx-main').textContent = `${Math.round(c.temperature_2m)}°C ${label}`;
       document.getElementById('wx-sub').textContent = `風 ${Math.round(c.windspeed_10m)}km/h`;
     } catch(e) {
-      document.getElementById('wx-main').textContent = '取得失敗';
+      // タイムアウト・通信エラー時は自動リトライ（最大2回）
+      if (retryCount < MAX_RETRY) {
+        document.getElementById('wx-main').textContent = `再試行中(${retryCount + 1})…`;
+        setTimeout(() => fetchWeather(retryCount + 1), 1500);
+      } else {
+        document.getElementById('wx-main').textContent = '取得失敗';
+      }
     }
   }, () => {
     // 位置情報拒否・失敗時も「取得中…」のまま固まらないようにする
